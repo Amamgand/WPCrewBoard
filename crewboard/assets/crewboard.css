@@ -1,0 +1,62 @@
+.crewboard-wrap{--cb-bg:#f5f3ef;--cb-card:#fff;--cb-text:#171717;--cb-muted:#68645f;--cb-accent:#b52821;max-width:1120px;margin:0 auto;padding:24px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--cb-text)}
+.crewboard-hero{display:flex;justify-content:space-between;gap:24px;align-items:flex-start;background:#171717;color:#fff;padding:30px;border-radius:18px;margin-bottom:28px}.crewboard-hero h1{margin:.2rem 0 .4rem;font-size:clamp(1.8rem,4vw,3rem);color:#fff}.crewboard-hero p{margin:0;color:#d9d9d9}.crewboard-eyebrow{text-transform:uppercase;letter-spacing:.16em;font-size:.75rem;color:#f05b52}.crewboard-logout{color:#fff;text-decoration:none;border:1px solid #666;border-radius:999px;padding:8px 14px;white-space:nowrap}
+.crewboard-section{margin:30px 0}.crewboard-section-title{display:flex;align-items:center;gap:10px;margin-bottom:14px}.crewboard-section-title h2{margin:0;font-size:1.45rem}.crewboard-section-title span{display:grid;place-items:center;min-width:28px;height:28px;border-radius:999px;background:#e9e5df;font-weight:700}
+.crewboard-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}.crewboard-card{background:var(--cb-card);border:1px solid #e4e0da;border-radius:14px;padding:16px 18px;box-shadow:0 5px 18px rgba(0,0,0,.05);display:flex;flex-direction:column;gap:5px}.crewboard-card-top{display:flex;justify-content:space-between;align-items:center;gap:6px}.crewboard-card-date{font-size:.78rem;color:var(--cb-muted)}.crewboard-card-event-title{font-weight:700;font-size:.97rem;line-height:1.25;color:var(--cb-text)}.crewboard-card-meta{font-size:.84rem;color:var(--cb-muted)}.crewboard-card-meta strong{color:var(--cb-text);font-weight:700}.crewboard-empty{background:var(--cb-bg);padding:20px;border-radius:12px;color:var(--cb-muted)}
+.crewboard-button{display:inline-block;border:0;background:var(--cb-accent);color:#fff!important;text-decoration:none;border-radius:9px;padding:8px 13px;font-weight:700;cursor:pointer;white-space:nowrap}
+.crewboard-button-accept{background:#1a7f4b}
+.crewboard-button-deny{background:#888}
+/* Flash notices */
+.crewboard-notice{padding:12px 16px;border-radius:10px;margin-bottom:16px;font-weight:600}
+.crewboard-notice-success{background:#d4edda;color:#155724}
+.crewboard-notice-warning{background:#fff3cd;color:#856404}
+/* Response badge on service cards */
+.crewboard-response-badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:.8rem;font-weight:700;margin-top:6px}
+.crewboard-response-badge.crewboard-response-accepted{background:#d4edda;color:#155724}
+.crewboard-response-badge.crewboard-response-denied{background:#f8d7da;color:#721c24}
+.crewboard-response-badge.crewboard-response-pending{background:#e9e5df;color:#555}
+.crewboard-response-reason{font-size:.85rem;color:var(--cb-muted);font-style:italic;margin:.25rem 0}
+.crewboard-card-denied{opacity:.75;border-color:#f5c6cb}
+/* Accept / Deny action area */
+.crewboard-respond-inline{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:4px}
+.crewboard-respond-inline form{display:contents}
+.crewboard-deny-inline{display:flex;gap:5px;align-items:center;flex:1;min-width:160px}
+.crewboard-deny-reason-input{flex:1;min-width:80px;border:1px solid #d0ccc7;border-radius:7px;padding:5px 8px;font-size:.83rem;font-family:inherit;color:var(--cb-text)}
+/* Admin response status indicators inside checkbox list */
+.crewboard-admin-response{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:.7rem;font-weight:700;margin-left:4px;vertical-align:middle}
+.crewboard-admin-response.crewboard-response-accepted{background:#d4edda;color:#155724}
+.crewboard-admin-response.crewboard-response-denied{background:#f8d7da;color:#721c24}
+.crewboard-admin-response.crewboard-response-pending{background:#e9e5df;color:#666}
+.crewboard-calendar-section{overflow:hidden}.crewboard-calendar-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}.crewboard-calendar-head h2{margin:0;text-transform:capitalize}.crewboard-calendar-head a{display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:#171717;color:#fff;text-decoration:none;font-size:1.7rem}.crewboard-agenda{display:flex;flex-direction:column;gap:10px}.crewboard-agenda-day{display:grid;grid-template-columns:72px 1fr;gap:14px;align-items:stretch;padding:12px;border:1px solid #e4e0da;border-radius:12px;background:#fff}.crewboard-agenda-day.is-today{border-color:#171717}.crewboard-agenda-date{display:flex;flex-direction:column;align-items:center;justify-content:center;border-right:1px solid #e4e0da}.crewboard-agenda-date strong{font-size:1.35rem;line-height:1.1}.crewboard-agenda-weekday{text-transform:uppercase;font-size:.74rem;font-weight:700;color:var(--cb-muted)}.crewboard-agenda-events{display:flex;flex-direction:column;gap:8px}.crewboard-event{padding:10px 12px;background:#efede9;border-radius:8px;font-size:.92rem;line-height:1.3}.crewboard-event.is-mine{background:#f7d8d5;border-left:3px solid var(--cb-accent)}.crewboard-event small{display:block;font-weight:700;color:#8d1f19;margin-top:3px}.crewboard-empty{margin:0;padding:18px;text-align:center;background:#f7f5f2;border-radius:10px;color:var(--cb-muted)}.crewboard-login{max-width:520px;margin:50px auto;text-align:center;padding:35px;background:#f5f3ef;border-radius:16px}
+@media(max-width:720px){.crewboard-wrap{padding:12px}.crewboard-hero{padding:22px;flex-direction:column}.crewboard-agenda-day{grid-template-columns:58px 1fr;gap:10px;padding:10px}.crewboard-agenda-date strong{font-size:1.15rem}.crewboard-event{font-size:.88rem}}
+
+/* ── Grid calendar ─────────────────────────────────────── */
+.crewboard-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.crewboard-cal-wday{text-align:center;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--cb-muted);padding:6px 0}
+.crewboard-cal-cell{min-height:56px;border:1px solid #e4e0da;border-radius:10px;padding:7px 8px;background:#fff;display:flex;flex-direction:column;gap:4px;transition:border-color .12s,box-shadow .12s}
+.crewboard-cal-cell.crewboard-cal-empty{background:transparent;border-color:transparent;pointer-events:none}
+.crewboard-cal-num{font-size:.82rem;font-weight:600;line-height:1}
+.crewboard-cal-cell.is-today{border-color:#171717}
+.crewboard-cal-cell.is-today .crewboard-cal-num{background:#171717;color:#fff;border-radius:50%;width:22px;height:22px;display:grid;place-items:center;font-size:.74rem}
+.crewboard-cal-cell.has-event{cursor:pointer;background:#d1f0d8;border-color:#89c49a}
+.crewboard-cal-cell.has-event:hover{background:#bce8c6;border-color:#6baf80;box-shadow:0 2px 8px rgba(0,0,0,.07)}
+.crewboard-cal-cell.has-mine.mine-accepted{background:#8fd5b0;border-color:#5ab888}
+.crewboard-cal-cell.has-mine.mine-pending{background:#fff0b3;border-color:#e0b800}
+.crewboard-cal-cell.has-mine.mine-denied{background:#fbc8cb;border-color:#e08588}
+.crewboard-cal-cell.is-active{border-color:var(--cb-accent);box-shadow:0 0 0 3px rgba(181,40,33,.13)}
+/* Detail panel */
+.crewboard-cal-panel{margin-top:10px;border:1px solid #e4e0da;border-radius:14px;background:#fff;padding:18px 20px;display:flex;flex-direction:column;gap:12px}
+.crewboard-cal-panel-event{display:flex;flex-direction:column;gap:5px}
+.crewboard-cal-panel-event+.crewboard-cal-panel-event{border-top:1px solid #f0ede9;padding-top:12px}
+.crewboard-cal-panel-event strong{font-size:1rem}
+.crewboard-cal-mine-badge{display:inline-flex;align-items:center;gap:4px;background:#f7d8d5;color:#8d1f19;border-radius:999px;padding:2px 9px;font-size:.75rem;font-weight:700;width:fit-content}
+.crewboard-cal-panel-event ul{margin:4px 0 0 16px;padding:0;font-size:.9rem;color:var(--cb-muted)}
+@media(max-width:540px){.crewboard-cal-cell{min-height:40px;padding:4px 5px;border-radius:7px}.crewboard-cal-num{font-size:.74rem}.crewboard-cal-dot{width:5px;height:5px}.crewboard-cal-wday{font-size:.62rem;padding:4px 0}}
+/* ── ICS Kalender-Abonnement ────────────────────────────────────────────── */
+.crewboard-ics-box{background:var(--cb-card);border:1px solid #e4e0da;border-radius:14px;padding:20px}
+.crewboard-ics-intro{margin:0 0 14px;font-size:.9rem;color:var(--cb-muted);line-height:1.5}
+.crewboard-ics-url-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.crewboard-ics-url-input{flex:1;min-width:200px;border:1px solid #d0ccc7;border-radius:8px;padding:8px 10px;font-size:.83rem;font-family:inherit;color:var(--cb-muted);background:#f7f5f2;cursor:text}
+.crewboard-ics-subscribe-btn{background:#1a5fa3}
+.crewboard-ics-rotate-btn{background:#555}
+.crewboard-ics-rotate-form{margin-top:4px}
+@media(max-width:720px){.crewboard-ics-url-row{flex-direction:column;align-items:stretch}.crewboard-ics-url-input{min-width:0}}
