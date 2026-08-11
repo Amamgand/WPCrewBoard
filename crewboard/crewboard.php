@@ -22,6 +22,7 @@ final class CrewBoard {
     const OPTION_SELF_ASSIGN  = 'crewboard_self_assign';
     const OPTION_CUSTOM_TEAMS  = 'crewboard_custom_teams';
     const META_ICS_TOKEN       = '_crewboard_ics_token';
+    const OPTION_DEFAULT_SERVICES = 'crewboard_default_services';
 
     public static function init(): void {
         add_action( 'plugins_loaded', array( __CLASS__, 'load_textdomain' ) );
@@ -50,6 +51,9 @@ final class CrewBoard {
         }
         if ( false === get_option( self::OPTION_CUSTOM_TEAMS, false ) ) {
             add_option( self::OPTION_CUSTOM_TEAMS, array() );
+        }
+        if ( false === get_option( self::OPTION_DEFAULT_SERVICES, false ) ) {
+            add_option( self::OPTION_DEFAULT_SERVICES, array( 'theke' => 2, 'einlass' => 2, 'einkauf' => 1 ) );
         }
         $page_id = (int) get_option( self::PAGE_OPTION );
         if ( $page_id && get_post( $page_id ) ) {
@@ -199,6 +203,32 @@ final class CrewBoard {
             'team'     => '',
             'assigned' => array(),
         );
+    }
+
+    private static function get_default_service_definitions(): array {
+        $config = get_option( self::OPTION_DEFAULT_SERVICES, array( 'theke' => 2, 'einlass' => 2, 'einkauf' => 1 ) );
+        if ( ! is_array( $config ) || empty( $config ) ) {
+            return array();
+        }
+        $all_teams = self::teams();
+        $services  = array();
+        foreach ( $config as $team_key => $needed ) {
+            $team_key = sanitize_key( (string) $team_key );
+            if ( ! isset( $all_teams[ $team_key ] ) ) {
+                continue;
+            }
+            $services[] = array(
+                'id'        => wp_generate_uuid4(),
+                'title'     => $all_teams[ $team_key ],
+                'start'     => '',
+                'end'       => '',
+                'needed'    => max( 1, (int) $needed ),
+                'team'      => $team_key,
+                'assigned'  => array(),
+                'responses' => array(),
+            );
+        }
+        return $services;
     }
 
     public static function save_event_services( int $post_id, WP_Post $post ): void {
@@ -830,6 +860,27 @@ final class CrewBoard {
                         <p class="description"><strong>Vordefinierte Teams:</strong> <?php echo esc_html( implode( ', ', array_values( self::default_teams() ) ) ); ?></p>
                     </td>
                 </tr>
+                <tr>
+                    <th scope="row">Standard-Dienste</th>
+                    <td>
+                        <p class="description">Bei Events ohne Dienste werden diese Typen automatisch als Vorlage vorgeschlagen. Titel und Teamzuordnung stammen aus der Teamliste.</p>
+                        <?php
+                        $def_svcs = get_option( self::OPTION_DEFAULT_SERVICES, array( 'theke' => 2, 'einlass' => 2, 'einkauf' => 1 ) );
+                        if ( ! is_array( $def_svcs ) ) { $def_svcs = array(); }
+                        foreach ( self::teams() as $team_key => $team_label ) :
+                            $is_def = array_key_exists( $team_key, $def_svcs );
+                            $needed = $is_def ? max( 1, (int) $def_svcs[ $team_key ] ) : 1;
+                        ?>
+                            <div class="crewboard-default-svc-row">
+                                <label>
+                                    <input type="checkbox" name="default_services[<?php echo esc_attr( $team_key ); ?>][enabled]" value="1" <?php checked( $is_def ); ?>>
+                                    <?php echo esc_html( $team_label ); ?>
+                                </label>
+                                <input type="number" min="1" max="50" name="default_services[<?php echo esc_attr( $team_key ); ?>][needed]" value="<?php echo esc_attr( (string) $needed ); ?>" class="small-text"> <span class="description">Personen</span>
+                            </div>
+                        <?php endforeach; ?>
+                    </td>
+                </tr>
             </table>
             <?php submit_button(); ?>
         </form></div><?php
@@ -854,6 +905,18 @@ final class CrewBoard {
         }
         update_option( self::OPTION_CUSTOM_TEAMS, $custom_teams );
 
+        // Save default services (team key → needed count).
+        $raw_def         = isset( $_POST['default_services'] ) && is_array( $_POST['default_services'] ) ? wp_unslash( $_POST['default_services'] ) : array();
+        $def_svcs        = array();
+        $valid_team_keys = array_keys( self::teams() );
+        foreach ( $raw_def as $team_key => $cfg ) {
+            $team_key = sanitize_key( (string) $team_key );
+            if ( '' === $team_key || ! in_array( $team_key, $valid_team_keys, true ) ) { continue; }
+            if ( empty( $cfg['enabled'] ) ) { continue; }
+            $def_svcs[ $team_key ] = max( 1, min( 50, (int) ( $cfg['needed'] ?? 1 ) ) );
+        }
+        update_option( self::OPTION_DEFAULT_SERVICES, $def_svcs );
+
         wp_safe_redirect( add_query_arg( 'updated', '1', admin_url( 'admin.php?page=crewboard-settings' ) ) );
         exit;
     }
@@ -863,11 +926,55 @@ final class CrewBoard {
             wp_die( 'Keine Berechtigung.' );
         }
         $event_id = isset( $_GET['event_id'] ) ? absint( $_GET['event_id'] ) : 0;
-        $events = self::get_events_between( new DateTimeImmutable( '-3 months', wp_timezone() ), new DateTimeImmutable( '+18 months', wp_timezone() ) );
+        $tz       = wp_timezone();
+        $now      = new DateTimeImmutable( 'today', $tz );
+        $all      = self::get_events_between( new DateTimeImmutable( '-24 months', $tz ), new DateTimeImmutable( '+18 months', $tz ) );
+        $upcoming = array();
+        $past     = array();
+        foreach ( $all as $event ) {
+            $date = self::event_start_date( $event );
+            if ( null !== $date && $date >= $now ) {
+                $upcoming[] = $event;
+            } else {
+                $past[] = $event;
+            }
+        }
+        $past = array_reverse( $past ); // most recent past event first
+
+        // If the currently selected event is in the past, the past group must be open.
+        $selected_post  = $event_id ? get_post( $event_id ) : null;
+        $sel_date       = $selected_post instanceof WP_Post ? self::event_start_date( $selected_post ) : null;
+        $selected_is_past = $sel_date instanceof DateTimeImmutable && $sel_date < $now;
         ?>
         <div class="wrap"><h1>CrewBoard – Veranstaltungen</h1>
         <?php if ( isset( $_GET['updated'] ) ) : ?><div class="notice notice-success"><p>Dienste gespeichert.</p></div><?php endif; ?>
-        <form method="get"><input type="hidden" name="page" value="crewboard"><select name="event_id"><option value="">Veranstaltung auswählen …</option><?php foreach ( $events as $event ) : ?><option value="<?php echo esc_attr( (string) $event->ID ); ?>" <?php selected( $event_id, $event->ID ); ?>><?php echo esc_html( self::event_date_label( $event ) . ' – ' . get_the_title( $event ) ); ?></option><?php endforeach; ?></select> <?php submit_button( 'Öffnen', 'secondary', '', false ); ?></form>
+        <form method="get">
+            <input type="hidden" name="page" value="crewboard">
+            <div class="crewboard-event-filter">
+                <input type="search" id="crewboard-event-search" class="regular-text" placeholder="Veranstaltung suchen …" autocomplete="off">
+                <select name="event_id" id="crewboard-event-select">
+                    <option value="">Veranstaltung auswählen …</option>
+                    <?php if ( ! empty( $upcoming ) ) : ?>
+                        <optgroup label="Kommende Veranstaltungen">
+                            <?php foreach ( $upcoming as $event ) : ?>
+                                <option value="<?php echo esc_attr( (string) $event->ID ); ?>" <?php selected( $event_id, $event->ID ); ?>><?php echo esc_html( self::event_date_label( $event ) . ' – ' . get_the_title( $event ) ); ?></option>
+                            <?php endforeach; ?>
+                        </optgroup>
+                    <?php endif; ?>
+                    <?php if ( ! empty( $past ) ) : ?>
+                        <optgroup label="Vergangene Veranstaltungen" id="crewboard-past-events"<?php if ( ! $selected_is_past ) { echo ' hidden'; } ?>>
+                            <?php foreach ( $past as $event ) : ?>
+                                <option value="<?php echo esc_attr( (string) $event->ID ); ?>" <?php selected( $event_id, $event->ID ); ?>><?php echo esc_html( self::event_date_label( $event ) . ' – ' . get_the_title( $event ) ); ?></option>
+                            <?php endforeach; ?>
+                        </optgroup>
+                    <?php endif; ?>
+                </select>
+                <?php submit_button( 'Öffnen', 'secondary', '', false ); ?>
+            </div>
+            <label class="crewboard-past-toggle">
+                <input type="checkbox" id="crewboard-show-past"<?php checked( $selected_is_past ); ?>> Vergangene Veranstaltungen anzeigen
+            </label>
+        </form>
         <?php if ( $event_id && 'event' === get_post_type( $event_id ) ) : ?>
             <hr><h2><?php echo esc_html( get_the_title( $event_id ) ); ?></h2>
             <form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
@@ -880,11 +987,21 @@ final class CrewBoard {
     }
 
     private static function render_services_editor( int $event_id ): void {
-        $services = self::get_services( $event_id );
-        if ( empty( $services ) ) { $services[] = self::empty_service(); }
+        $services     = self::get_services( $event_id );
+        $is_prefilled = empty( $services );
+        if ( $is_prefilled ) {
+            $services = self::get_default_service_definitions();
+            if ( empty( $services ) ) {
+                $services[]   = self::empty_service();
+                $is_prefilled = false;
+            }
+        }
         $users = get_users( array( 'orderby' => 'display_name', 'order' => 'ASC', 'fields' => array( 'ID', 'display_name' ) ) );
         $users = array_values( array_filter( $users, static fn( $user ): bool => self::user_is_eligible( (int) $user->ID, '' ) ) );
-        ?><table class="widefat striped" id="crewboard-services-table"><thead><tr><th>Dienst</th><th>Beginn</th><th>Ende</th><th>Bedarf</th><th>Team</th><th>Mitglieder</th><th></th></tr></thead><tbody><?php foreach ( $services as $index => $service ) { self::render_service_row( $index, $service, $users ); } ?></tbody></table>
+        if ( $is_prefilled ) { ?>
+            <div class="notice notice-info inline"><p>&#x26A1; Noch keine Dienste für dieses Event vorhanden – Standard-Dienste wurden als Vorlage eingetragen. Vor dem Speichern anpassen.</p></div>
+        <?php } ?>
+        <table class="widefat striped" id="crewboard-services-table"><thead><tr><th>Dienst</th><th>Beginn</th><th>Ende</th><th>Bedarf</th><th>Team</th><th>Mitglieder</th><th></th></tr></thead><tbody><?php foreach ( $services as $index => $service ) { self::render_service_row( $index, $service, $users ); } ?></tbody></table>
         <p><button type="button" class="button" id="crewboard-add-service">+ Dienst hinzufügen</button></p><script type="text/template" id="crewboard-service-template"><?php self::render_service_row( '__INDEX__', self::empty_service(), $users ); ?></script><?php
     }
 

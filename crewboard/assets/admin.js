@@ -74,6 +74,41 @@ function crewBoardAdminInit() {
     toggle.textContent = form.hidden ? '\u2717 Ablehnen' : 'Abbrechen';
     if (!form.hidden) form.querySelector('textarea')?.focus();
   });
+
+  // ── Event dropdown: search + past-events toggle ─────────────────
+  const cbEventSelect = document.getElementById('crewboard-event-select');
+  if (cbEventSelect) {
+    const cbPastGroup  = document.getElementById('crewboard-past-events');
+    const cbShowPast   = document.getElementById('crewboard-show-past');
+    const cbEventSearch = document.getElementById('crewboard-event-search');
+
+    function cbFilterEvents() {
+      const term = cbEventSearch ? cbEventSearch.value.toLowerCase().trim() : '';
+      cbEventSelect.querySelectorAll('option').forEach(opt => {
+        if (!opt.value) return; // always keep the placeholder
+        const inPast   = cbPastGroup ? cbPastGroup.contains(opt) : false;
+        const pastHide = inPast && cbPastGroup.hidden;
+        const textHide = term !== '' && !opt.textContent.toLowerCase().includes(term);
+        opt.hidden = pastHide || textHide;
+      });
+    }
+
+    if (cbShowPast && cbPastGroup) {
+      cbShowPast.addEventListener('change', () => {
+        cbPastGroup.hidden = !cbShowPast.checked;
+        cbFilterEvents();
+      });
+    }
+
+    if (cbEventSearch) {
+      cbEventSearch.addEventListener('input', cbFilterEvents);
+    }
+
+    // Sync checkbox state with the optgroup's initial hidden state on load.
+    if (cbShowPast && cbPastGroup) {
+      cbShowPast.checked = !cbPastGroup.hidden;
+    }
+  }
 }
 
 // Handle both normal load and defer/async scenarios
