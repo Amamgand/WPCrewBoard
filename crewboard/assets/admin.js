@@ -84,6 +84,67 @@ function crewBoardAdminInit() {
     if (!form.hidden) form.querySelector('textarea')?.focus();
   });
 
+  // ── Auto-fill service times from EM event date/time fields ─────────
+  (function syncEmTimesToServices() {
+    const tbl = document.getElementById('crewboard-services-table');
+    if (!tbl) return;
+
+    // Events Manager uses input[name="event_start_date"] / event_start_time etc.
+    const sel = name => document.querySelector(`input[name="${name}"], #${name}`);
+    const startDateEl = sel('event_start_date');
+    if (!startDateEl) return; // not on an EM event edit screen
+
+    // Add hours to a "Y-m-d" + "H:i[:s]" pair, returns "Y-m-dTH:i" in local time.
+    function shiftHours(dateStr, timeStr, delta) {
+      const [y, mo, d] = dateStr.split('-').map(Number);
+      const [h, mi]    = (timeStr || '20:00').split(':').map(Number);
+      const dt = new Date(y, mo - 1, d, h + delta, mi || 0);
+      const p  = n => String(n).padStart(2, '0');
+      return `${dt.getFullYear()}-${p(dt.getMonth()+1)}-${p(dt.getDate())}T${p(dt.getHours())}:${p(dt.getMinutes())}`;
+    }
+
+    function applyTimes() {
+      const startTimeEl = sel('event_start_time');
+      const endDateEl   = sel('event_end_date');
+      const endTimeEl   = sel('event_end_time');
+
+      const sDate = startDateEl.value.trim();
+      if (!sDate || !/^\d{4}-\d{2}-\d{2}$/.test(sDate)) return;
+
+      const sTime = startTimeEl?.value.trim() || '20:00';
+      const eDate = endDateEl?.value.trim()   || sDate;
+      const eTime = endTimeEl?.value.trim()   || sTime;
+
+      const svcStart = shiftHours(sDate, sTime, -1);
+      const svcEnd   = shiftHours(eDate, eTime,  1);
+
+      tbl.dataset.evtStart = svcStart;
+      tbl.dataset.evtEnd   = svcEnd;
+
+      // Fill only currently-empty start/end inputs in all service rows.
+      tbl.querySelectorAll('.crewboard-service-row').forEach(row => {
+        const sf = row.querySelector('input[name*="[start]"]');
+        const ef = row.querySelector('input[name*="[end]"]');
+        if (sf && !sf.value) sf.value = svcStart;
+        if (ef && !ef.value) ef.value = svcEnd;
+      });
+    }
+
+    // Run once on load, then watch EM fields for changes.
+    applyTimes();
+    const emFields = 'input[name="event_start_date"], input[name="event_start_time"], input[name="event_end_date"], input[name="event_end_time"]';
+    // Native events (manual typing).
+    document.querySelectorAll(emFields).forEach(el => {
+      el.addEventListener('change', applyTimes);
+      el.addEventListener('input',  applyTimes);
+      el.addEventListener('blur',   applyTimes);
+    });
+    // jQuery events — EM datepicker fires these when a date is picked via the calendar popup.
+    if (typeof jQuery !== 'undefined') {
+      jQuery(document).on('change input', emFields, applyTimes);
+    }
+  })();
+
   // ── Event dropdown: search + past-events toggle ─────────────────
   const cbEventSelect = document.getElementById('crewboard-event-select');
   if (cbEventSelect) {

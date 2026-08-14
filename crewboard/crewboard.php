@@ -119,7 +119,25 @@ final class CrewBoard {
 
     public static function render_event_metabox( WP_Post $post ): void {
         wp_nonce_field( 'crewboard_save_services', 'crewboard_nonce' );
-        $services = self::get_services( $post->ID );
+        $services     = self::get_services( $post->ID );
+        $is_prefilled = empty( $services );
+
+        // Compute event-based default times: service start = event start − 1 h, end = event end + 1 h.
+        $evt_start_dt = self::event_start_date( $post );
+        $evt_end_dt   = self::event_end_date( $post );
+        $svc_start    = $evt_start_dt ? $evt_start_dt->modify( '-1 hour' )->format( 'Y-m-d\TH:i' ) : '';
+        $svc_end      = $evt_end_dt
+            ? $evt_end_dt->modify( '+1 hour' )->format( 'Y-m-d\TH:i' )
+            : ( $evt_start_dt ? $evt_start_dt->modify( '+1 hour' )->format( 'Y-m-d\TH:i' ) : '' );
+
+        if ( $is_prefilled ) {
+            $services = self::get_default_service_definitions( $svc_start, $svc_end );
+            if ( empty( $services ) ) {
+                $services[]   = self::empty_service();
+                $is_prefilled = false;
+            }
+        }
+
         $users = get_users(
             array(
                 'orderby' => 'display_name',
@@ -130,10 +148,13 @@ final class CrewBoard {
         $users = array_values( array_filter( $users, static fn( $user ): bool => self::user_is_eligible( (int) $user->ID, '' ) ) );
         ?>
         <p>Hier werden Dienste angelegt und Mitgliedern zugewiesen. Freie Plätze erscheinen später im Mitgliederportal.</p>
-        <table class="widefat striped" id="crewboard-services-table">
+        <?php if ( $is_prefilled ) : ?>
+            <div class="notice notice-info inline"><p>&#x26A1; Noch keine Dienste für dieses Event – Standard-Dienste wurden als Vorlage eingetragen. Vor dem Speichern anpassen.</p></div>
+        <?php endif; ?>
+        <table class="widefat striped" id="crewboard-services-table" data-evt-start="<?php echo esc_attr( $svc_start ); ?>" data-evt-end="<?php echo esc_attr( $svc_end ); ?>">
             <thead>
                 <tr>
-                    <th>Dienst/Aufgabe</th>
+                    <th>Dienst / Beschreibung</th>
                     <th>Beginn</th>
                     <th>Ende</th>
                     <th>Bedarf</th>
@@ -144,9 +165,6 @@ final class CrewBoard {
             </thead>
             <tbody>
             <?php
-            if ( empty( $services ) ) {
-                $services[] = self::empty_service();
-            }
             foreach ( $services as $index => $service ) {
                 self::render_service_row( $index, $service, $users );
             }
@@ -242,12 +260,13 @@ final class CrewBoard {
             }
             return $services;
         }
-        // Built-in fallback: four standard services (no team restriction).
+        // Built-in fallback: five standard services (no team restriction).
         $defaults = array(
             array( 'title' => 'Theke',        'needed' => 2 ),
             array( 'title' => 'Werbung',      'needed' => 1 ),
             array( 'title' => 'Einlass',      'needed' => 2 ),
             array( 'title' => 'Vorbereitung', 'needed' => 2 ),
+            array( 'title' => 'Reinigung',    'needed' => 2 ),
         );
         return array_map( fn( array $d ): array => array(
             'id'          => wp_generate_uuid4(),
@@ -334,9 +353,12 @@ final class CrewBoard {
             <?php elseif ( 'ics_rotated' === $cb_param ) : ?>
                 <div class="crewboard-notice crewboard-notice-success">✓ Dein Kalender-Link wurde neu erstellt. Der alte Link ist sofort ungültig.</div>
             <?php endif; ?>
+            <div class="crewboard-services-row">
             <?php echo self::render_my_services( (int) $user->ID ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
             <?php echo self::render_open_services( (int) $user->ID ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+            </div>
             <?php echo self::render_calendar( $month, (int) $user->ID ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+            <?php echo self::render_crew_overview(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
             <?php echo self::render_ics_subscription( (int) $user->ID ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
         </div>
         <?php
@@ -411,10 +433,9 @@ final class CrewBoard {
                     <span class="crewboard-response-badge crewboard-response-<?php echo esc_attr( $badge['cls'] ); ?>"><?php echo esc_html( $badge['label'] ); ?></span>
                 <?php endif; ?>
             </div>
+            <div class="crewboard-card-title"><?php echo esc_html( $service['title'] ); ?></div>
             <div class="crewboard-card-event-title"><?php echo esc_html( get_the_title( $event ) ); ?></div>
-            <div class="crewboard-card-meta">
-                <strong><?php echo esc_html( $service['title'] ); ?></strong><?php echo esc_html( ' · ' . $when . ' · ' . sprintf( '%d/%d', $assigned_count, $needed ) ); ?>
-            </div>
+            <div class="crewboard-card-meta"><?php echo esc_html( $when . ' · ' . sprintf( '%d/%d', $assigned_count, $needed ) ); ?></div>
             <?php if ( ! empty( $service['description'] ) ) : ?>
                 <p class="crewboard-card-desc"><?php echo esc_html( $service['description'] ); ?></p>
             <?php endif; ?>
@@ -737,8 +758,12 @@ final class CrewBoard {
             $assigned = array_values( array_unique( array_map( 'intval', $service['assigned'] ?? array() ) ) );
             $needed = max( 1, (int) ( $service['needed'] ?? 1 ) );
             if ( ! in_array( $user_id, $assigned, true ) && count( $assigned ) < $needed ) {
-                $assigned[] = $user_id;
+                $assigned[]          = $user_id;
                 $service['assigned'] = $assigned;
+                // Self-assigned → immediately accepted; no separate confirmation needed.
+                $responses                           = is_array( $service['responses'] ?? null ) ? $service['responses'] : array();
+                $responses[ (string) $user_id ]      = array( 'status' => 'accepted', 'reason' => '', 'at' => gmdate( 'c' ) );
+                $service['responses']                = $responses;
             }
             break;
         }
@@ -1375,7 +1400,7 @@ final class CrewBoard {
         $query = new WP_Query(
             array(
                 'post_type'      => 'event',
-                'post_status'    => 'publish',
+                'post_status'    => array( 'publish', 'private' ),
                 'posts_per_page' => 300,
                 'orderby'        => 'date',
                 'order'          => 'ASC',
@@ -1562,6 +1587,92 @@ final class CrewBoard {
         self::create_ics_token( get_current_user_id() );
         wp_safe_redirect( add_query_arg( 'crewboard', 'ics_rotated', self::portal_url() ) );
         exit;
+    }
+
+    private static function render_crew_overview(): string {
+        $tz      = wp_timezone();
+        $start   = new DateTimeImmutable( 'today', $tz );
+        $end     = $start->modify( '+3 months' );
+        $events  = self::get_events_between( $start, $end );
+
+        if ( empty( $events ) ) {
+            return '';
+        }
+
+        // All crew members with a level assigned.
+        $all_users = get_users( array( 'orderby' => 'display_name', 'order' => 'ASC' ) );
+        $members   = array_values( array_filter( $all_users,
+            fn( WP_User $u ): bool => '' !== (string) get_user_meta( $u->ID, self::META_LEVEL, true )
+        ) );
+
+        if ( empty( $members ) ) {
+            return '';
+        }
+
+        // Build matrix: member_id → event_id → list of {title, status}.
+        $matrix = array();
+        foreach ( $members as $member ) {
+            $matrix[ $member->ID ] = array();
+        }
+        foreach ( $events as $event ) {
+            foreach ( self::get_services( $event->ID ) as $svc ) {
+                $assigned  = array_map( 'intval', $svc['assigned'] ?? array() );
+                $responses = is_array( $svc['responses'] ?? null ) ? $svc['responses'] : array();
+                foreach ( $assigned as $uid ) {
+                    if ( ! array_key_exists( $uid, $matrix ) ) {
+                        continue;
+                    }
+                    $resp                        = $responses[ (string) $uid ] ?? array( 'status' => 'pending' );
+                    $matrix[ $uid ][ $event->ID ][] = array(
+                        'title'  => $svc['title'],
+                        'status' => $resp['status'] ?? 'pending',
+                    );
+                }
+            }
+        }
+
+        ob_start();
+        ?>
+        <section class="crewboard-section crewboard-overview-section">
+            <div class="crewboard-section-title"><h2>Crew-Übersicht</h2></div>
+            <div class="crewboard-overview-wrap">
+                <table class="crewboard-overview-table">
+                    <thead>
+                        <tr>
+                            <th class="crewboard-ov-name">Mitglied</th>
+                            <?php foreach ( $events as $event ) : ?>
+                                <th class="crewboard-ov-event">
+                                    <span class="crewboard-ov-date"><?php echo esc_html( self::event_date_label( $event ) ); ?></span>
+                                    <span class="crewboard-ov-title"><?php echo esc_html( get_the_title( $event ) ); ?></span>
+                                </th>
+                            <?php endforeach; ?>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ( $members as $member ) : ?>
+                            <tr>
+                                <td class="crewboard-ov-name"><?php echo esc_html( $member->display_name ); ?></td>
+                                <?php foreach ( $events as $event ) :
+                                    $tasks = $matrix[ $member->ID ][ $event->ID ] ?? array();
+                                ?>
+                                    <td class="crewboard-ov-cell">
+                                        <?php if ( empty( $tasks ) ) : ?>
+                                            <span class="crewboard-ov-empty">—</span>
+                                        <?php else : ?>
+                                            <?php foreach ( $tasks as $task ) : ?>
+                                                <span class="crewboard-ov-task crewboard-ov-<?php echo esc_attr( $task['status'] ); ?>"><?php echo esc_html( $task['title'] ); ?></span>
+                                            <?php endforeach; ?>
+                                        <?php endif; ?>
+                                    </td>
+                                <?php endforeach; ?>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        <?php
+        return (string) ob_get_clean();
     }
 
     private static function render_ics_subscription( int $user_id ): string {
