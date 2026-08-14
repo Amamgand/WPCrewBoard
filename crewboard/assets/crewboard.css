@@ -49,8 +49,10 @@
 .crewboard-cal-panel-event+.crewboard-cal-panel-event{border-top:1px solid #f0ede9;padding-top:12px}
 .crewboard-cal-panel-event strong{font-size:1rem}
 /* Event detail panels (server-rendered with forms) */
-#crewboard-evt-panels{display:flex;flex-direction:column;gap:0;margin-top:10px;border:1px solid #e4e0da;border-radius:14px;background:#fff;overflow:hidden}
-.crewboard-evt-panel{padding:18px 20px}
+#crewboard-evt-panels{display:none;flex-direction:column;gap:0;margin-top:10px;border:1px solid #e4e0da;border-radius:14px;background:#fff;overflow:hidden}
+#crewboard-evt-panels.cb-open{display:flex}
+.crewboard-evt-panel{display:none;padding:18px 20px}
+.crewboard-evt-panel.cb-show{display:block}
 .crewboard-evt-panel+.crewboard-evt-panel{border-top:1px solid #f0ede9}
 .crewboard-evt-panel-header{display:flex;flex-direction:column;gap:3px;margin-bottom:12px}
 .crewboard-evt-panel-date{font-size:.78rem;color:var(--cb-muted);display:block}
@@ -63,6 +65,8 @@
 .crewboard-evt-task-time{font-size:.82rem;color:var(--cb-muted)}
 .crewboard-evt-task-spots{font-size:.82rem;background:#d4edda;color:#155724;border-radius:999px;padding:2px 9px;font-weight:700}
 .crewboard-evt-no-tasks{color:var(--cb-muted);font-size:.9rem;padding:4px 0;margin:0}
+.crewboard-evt-task-desc{font-size:.82rem;color:var(--cb-muted);font-style:italic;width:100%}
+.crewboard-card-desc{font-size:.82rem;color:var(--cb-muted);font-style:italic;margin:2px 0 0}
 .crewboard-cal-mine-badge{display:inline-flex;align-items:center;gap:4px;background:#f7d8d5;color:#8d1f19;border-radius:999px;padding:2px 9px;font-size:.75rem;font-weight:700;width:fit-content}
 .crewboard-cal-panel-event ul{margin:4px 0 0 16px;padding:0;font-size:.9rem;color:var(--cb-muted)}
 @media(max-width:540px){.crewboard-cal-cell{min-height:40px;padding:4px 5px;border-radius:7px}.crewboard-cal-num{font-size:.74rem}.crewboard-cal-dot{width:5px;height:5px}.crewboard-cal-wday{font-size:.62rem;padding:4px 0}}

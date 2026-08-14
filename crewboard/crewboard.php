@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class CrewBoard {
-    const VERSION = '0.3.3';
+    const VERSION = '0.3.5';
     const META_SERVICES = '_crewboard_services';
     const PAGE_OPTION = 'crewboard_portal_page_id';
     const META_TEAMS = '_crewboard_teams';
@@ -167,6 +167,7 @@ final class CrewBoard {
             <td>
                 <input type="hidden" name="crewboard_services[<?php echo esc_attr( (string) $index ); ?>][id]" value="<?php echo esc_attr( $service['id'] ?? wp_generate_uuid4() ); ?>">
                 <input type="text" name="crewboard_services[<?php echo esc_attr( (string) $index ); ?>][title]" value="<?php echo esc_attr( $service['title'] ?? '' ); ?>" placeholder="z. B. Theke" required>
+                <textarea name="crewboard_services[<?php echo esc_attr( (string) $index ); ?>][description]" placeholder="Beschreibung (optional)" rows="2" class="crewboard-svc-description"><?php echo esc_textarea( $service['description'] ?? '' ); ?></textarea>
             </td>
             <td><input type="datetime-local" name="crewboard_services[<?php echo esc_attr( (string) $index ); ?>][start]" value="<?php echo esc_attr( $service['start'] ?? '' ); ?>"></td>
             <td><input type="datetime-local" name="crewboard_services[<?php echo esc_attr( (string) $index ); ?>][end]" value="<?php echo esc_attr( $service['end'] ?? '' ); ?>"></td>
@@ -206,40 +207,59 @@ final class CrewBoard {
 
     private static function empty_service(): array {
         return array(
-            'id'       => wp_generate_uuid4(),
-            'title'    => '',
-            'start'    => '',
-            'end'      => '',
-            'needed'   => 1,
-            'team'     => '',
-            'assigned' => array(),
+            'id'          => wp_generate_uuid4(),
+            'title'       => '',
+            'description' => '',
+            'start'       => '',
+            'end'         => '',
+            'needed'      => 1,
+            'team'        => '',
+            'assigned'    => array(),
         );
     }
 
-    private static function get_default_service_definitions(): array {
-        $config = get_option( self::OPTION_DEFAULT_SERVICES, array( 'theke' => 2, 'einlass' => 2, 'einkauf' => 1 ) );
-        if ( ! is_array( $config ) || empty( $config ) ) {
-            return array();
-        }
+    private static function get_default_service_definitions( string $svc_start = '', string $svc_end = '' ): array {
+        $config    = get_option( self::OPTION_DEFAULT_SERVICES, null );
         $all_teams = self::teams();
-        $services  = array();
-        foreach ( $config as $team_key => $needed ) {
-            $team_key = sanitize_key( (string) $team_key );
-            if ( ! isset( $all_teams[ $team_key ] ) ) {
-                continue;
+        if ( is_array( $config ) && ! empty( $config ) ) {
+            $services = array();
+            foreach ( $config as $team_key => $needed ) {
+                $team_key = sanitize_key( (string) $team_key );
+                if ( ! isset( $all_teams[ $team_key ] ) ) {
+                    continue;
+                }
+                $services[] = array(
+                    'id'          => wp_generate_uuid4(),
+                    'title'       => $all_teams[ $team_key ],
+                    'description' => '',
+                    'start'       => $svc_start,
+                    'end'         => $svc_end,
+                    'needed'      => max( 1, (int) $needed ),
+                    'team'        => $team_key,
+                    'assigned'    => array(),
+                    'responses'   => array(),
+                );
             }
-            $services[] = array(
-                'id'        => wp_generate_uuid4(),
-                'title'     => $all_teams[ $team_key ],
-                'start'     => '',
-                'end'       => '',
-                'needed'    => max( 1, (int) $needed ),
-                'team'      => $team_key,
-                'assigned'  => array(),
-                'responses' => array(),
-            );
+            return $services;
         }
-        return $services;
+        // Built-in fallback: four standard services (no team restriction).
+        $defaults = array(
+            array( 'title' => 'Theke',        'needed' => 2 ),
+            array( 'title' => 'Werbung',      'needed' => 1 ),
+            array( 'title' => 'Einlass',      'needed' => 2 ),
+            array( 'title' => 'Vorbereitung', 'needed' => 2 ),
+        );
+        return array_map( fn( array $d ): array => array(
+            'id'          => wp_generate_uuid4(),
+            'title'       => $d['title'],
+            'description' => '',
+            'start'       => $svc_start,
+            'end'         => $svc_end,
+            'needed'      => $d['needed'],
+            'team'        => '',
+            'assigned'    => array(),
+            'responses'   => array(),
+        ), $defaults );
     }
 
     public static function save_event_services( int $post_id, WP_Post $post ): void {
@@ -395,6 +415,9 @@ final class CrewBoard {
             <div class="crewboard-card-meta">
                 <strong><?php echo esc_html( $service['title'] ); ?></strong><?php echo esc_html( ' · ' . $when . ' · ' . sprintf( '%d/%d', $assigned_count, $needed ) ); ?>
             </div>
+            <?php if ( ! empty( $service['description'] ) ) : ?>
+                <p class="crewboard-card-desc"><?php echo esc_html( $service['description'] ); ?></p>
+            <?php endif; ?>
             <?php if ( 'denied' === $status && ! empty( $response['reason'] ) ) : ?>
                 <p class="crewboard-response-reason"><?php echo esc_html( $response['reason'] ); ?></p>
             <?php endif; ?>
@@ -552,7 +575,7 @@ final class CrewBoard {
             </div>
 
         <?php // Server-rendered event detail panels (contain nonce-protected forms). ?>
-        <div id="crewboard-evt-panels" hidden>
+        <div id="crewboard-evt-panels">
             <?php
             $badge_map = array(
                 'accepted' => array( 'label' => '✓ Zugesagt',   'cls' => 'accepted' ),
@@ -562,7 +585,7 @@ final class CrewBoard {
             foreach ( $event_panels as $pd ) :
                 $pevt = $pd['event'];
             ?>
-            <div class="crewboard-evt-panel" id="crewboard-evt-<?php echo esc_attr( (string) $pevt->ID ); ?>" data-event-id="<?php echo esc_attr( (string) $pevt->ID ); ?>" hidden>
+            <div class="crewboard-evt-panel" id="crewboard-evt-<?php echo esc_attr( (string) $pevt->ID ); ?>" data-event-id="<?php echo esc_attr( (string) $pevt->ID ); ?>">
                 <div class="crewboard-evt-panel-header">
                     <span class="crewboard-evt-panel-date"><?php echo esc_html( self::event_date_label( $pevt ) ); ?></span>
                     <strong class="crewboard-evt-panel-title"><?php echo esc_html( get_the_title( $pevt ) ); ?></strong>
@@ -579,6 +602,9 @@ final class CrewBoard {
                     <div class="crewboard-evt-task">
                         <div class="crewboard-evt-task-info">
                             <span class="crewboard-evt-task-title"><?php echo esc_html( $svc['title'] ); ?></span>
+                            <?php if ( ! empty( $svc['description'] ) ) : ?>
+                                <span class="crewboard-evt-task-desc"><?php echo esc_html( $svc['description'] ); ?></span>
+                            <?php endif; ?>
                             <?php if ( ! empty( $svc['start'] ) ) : ?>
                                 <span class="crewboard-evt-task-time"><?php echo esc_html( self::format_service_time( $svc, $pevt ) ); ?></span>
                             <?php endif; ?>
@@ -624,6 +650,9 @@ final class CrewBoard {
                     <div class="crewboard-evt-task crewboard-evt-task-open">
                         <div class="crewboard-evt-task-info">
                             <span class="crewboard-evt-task-title"><?php echo esc_html( $svc['title'] ); ?></span>
+                            <?php if ( ! empty( $svc['description'] ) ) : ?>
+                                <span class="crewboard-evt-task-desc"><?php echo esc_html( $svc['description'] ); ?></span>
+                            <?php endif; ?>
                             <?php if ( ! empty( $svc['start'] ) ) : ?>
                                 <span class="crewboard-evt-task-time"><?php echo esc_html( self::format_service_time( $svc, $pevt ) ); ?></span>
                             <?php endif; ?>
@@ -1113,8 +1142,18 @@ final class CrewBoard {
     private static function render_services_editor( int $event_id ): void {
         $services     = self::get_services( $event_id );
         $is_prefilled = empty( $services );
+
+        // Compute event-based default times: service start = event start − 1 h, end = event end + 1 h.
+        $evt_post     = get_post( $event_id );
+        $evt_start_dt = $evt_post instanceof WP_Post ? self::event_start_date( $evt_post ) : null;
+        $evt_end_dt   = $evt_post instanceof WP_Post ? self::event_end_date( $evt_post ) : null;
+        $svc_start    = $evt_start_dt ? $evt_start_dt->modify( '-1 hour' )->format( 'Y-m-d\TH:i' ) : '';
+        $svc_end      = $evt_end_dt
+            ? $evt_end_dt->modify( '+1 hour' )->format( 'Y-m-d\TH:i' )
+            : ( $evt_start_dt ? $evt_start_dt->modify( '+1 hour' )->format( 'Y-m-d\TH:i' ) : '' );
+
         if ( $is_prefilled ) {
-            $services = self::get_default_service_definitions();
+            $services = self::get_default_service_definitions( $svc_start, $svc_end );
             if ( empty( $services ) ) {
                 $services[]   = self::empty_service();
                 $is_prefilled = false;
@@ -1125,7 +1164,7 @@ final class CrewBoard {
         if ( $is_prefilled ) { ?>
             <div class="notice notice-info inline"><p>&#x26A1; Noch keine Dienste für dieses Event vorhanden – Standard-Dienste wurden als Vorlage eingetragen. Vor dem Speichern anpassen.</p></div>
         <?php } ?>
-        <table class="widefat striped" id="crewboard-services-table"><thead><tr><th>Dienst</th><th>Beginn</th><th>Ende</th><th>Bedarf</th><th>Team</th><th>Mitglieder</th><th></th></tr></thead><tbody><?php foreach ( $services as $index => $service ) { self::render_service_row( $index, $service, $users ); } ?></tbody></table>
+        <table class="widefat striped" id="crewboard-services-table" data-evt-start="<?php echo esc_attr( $svc_start ); ?>" data-evt-end="<?php echo esc_attr( $svc_end ); ?>"><thead><tr><th>Dienst / Beschreibung</th><th>Beginn</th><th>Ende</th><th>Bedarf</th><th>Team</th><th>Mitglieder</th><th></th></tr></thead><tbody><?php foreach ( $services as $index => $service ) { self::render_service_row( $index, $service, $users ); } ?></tbody></table>
         <p><button type="button" class="button" id="crewboard-add-service">+ Dienst hinzufügen</button></p><script type="text/template" id="crewboard-service-template"><?php self::render_service_row( '__INDEX__', self::empty_service(), $users ); ?></script><?php
     }
 
@@ -1175,14 +1214,15 @@ final class CrewBoard {
             }
 
             $services[] = array(
-                'id'        => $svc_id,
-                'title'     => $title,
-                'start'     => self::sanitize_datetime_local( $row['start'] ?? '' ),
-                'end'       => self::sanitize_datetime_local( $row['end'] ?? '' ),
-                'needed'    => max( 1, min( 50, absint( $row['needed'] ?? 1 ) ) ),
-                'team'      => $team,
-                'assigned'  => $assigned,
-                'responses' => $responses,
+                'id'          => $svc_id,
+                'title'       => $title,
+                'description' => sanitize_textarea_field( $row['description'] ?? '' ),
+                'start'       => self::sanitize_datetime_local( $row['start'] ?? '' ),
+                'end'         => self::sanitize_datetime_local( $row['end'] ?? '' ),
+                'needed'      => max( 1, min( 50, absint( $row['needed'] ?? 1 ) ) ),
+                'team'        => $team,
+                'assigned'    => $assigned,
+                'responses'   => $responses,
             );
         }
         update_post_meta( $post_id, self::META_SERVICES, $services );
@@ -1378,6 +1418,33 @@ final class CrewBoard {
                 $date = DateTimeImmutable::createFromFormat( '!Y-m-d', $match[0], wp_timezone() );
                 if ( $date ) {
                     return $date;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static function event_end_date( WP_Post $event ): ?DateTimeImmutable {
+        if ( class_exists( 'EM_Event' ) ) {
+            try {
+                $em_event = new EM_Event( $event->ID, 'post_id' );
+                if ( ! empty( $em_event->event_end_date ) ) {
+                    $time = ! empty( $em_event->event_end_time ) ? $em_event->event_end_time : '23:59:00';
+                    $date = DateTimeImmutable::createFromFormat( '!Y-m-d H:i:s', $em_event->event_end_date . ' ' . $time, wp_timezone() );
+                    if ( $date ) {
+                        return $date;
+                    }
+                }
+            } catch ( Throwable $e ) {
+                // Fallback below.
+            }
+        }
+        foreach ( array( '_event_end_date', 'event_end_date' ) as $key ) {
+            $raw = (string) get_post_meta( $event->ID, $key, true );
+            if ( preg_match( '/^\d{4}-\d{2}-\d{2}/', $raw, $match ) ) {
+                $date = DateTimeImmutable::createFromFormat( '!Y-m-d', $match[0], wp_timezone() );
+                if ( $date ) {
+                    return $date->setTime( 23, 59, 0 );
                 }
             }
         }

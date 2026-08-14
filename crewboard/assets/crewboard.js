@@ -13,8 +13,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (activeCell === cell) {
         cell.classList.remove('is-active');
         if (evtPanels) {
-          evtPanels.hidden = true;
-          evtPanels.querySelectorAll('.crewboard-evt-panel').forEach(p => { p.hidden = true; });
+          evtPanels.classList.remove('cb-open');
+          evtPanels.querySelectorAll('.crewboard-evt-panel').forEach(p => p.classList.remove('cb-show'));
         }
         activeCell = null;
         return;
@@ -25,18 +25,20 @@ document.addEventListener('DOMContentLoaded', () => {
       activeCell = cell;
 
       if (evtPanels) {
-        // Hide all panels first, then reveal matching ones.
-        evtPanels.querySelectorAll('.crewboard-evt-panel').forEach(p => { p.hidden = true; });
+        evtPanels.querySelectorAll('.crewboard-evt-panel').forEach(p => p.classList.remove('cb-show'));
         const events = JSON.parse(cell.dataset.events || '[]');
         let shown = 0;
         events.forEach(evt => {
-          // Try id-based lookup first, fall back to data-attribute.
           const p = document.getElementById('crewboard-evt-' + evt.event_id)
                   || evtPanels.querySelector('[data-event-id="' + evt.event_id + '"]');
-          if (p) { p.hidden = false; shown++; }
+          if (p) { p.classList.add('cb-show'); shown++; }
         });
-        evtPanels.hidden = shown === 0;
-        if (shown > 0) evtPanels.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        if (shown > 0) {
+          evtPanels.classList.add('cb-open');
+          evtPanels.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } else {
+          evtPanels.classList.remove('cb-open');
+        }
       }
     });
   }

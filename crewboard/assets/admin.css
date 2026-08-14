@@ -1,6 +1,7 @@
 #crewboard-services-table input[type="text"],
 #crewboard-services-table input[type="datetime-local"],
 #crewboard-services-table select { width: 100%; }
+.crewboard-svc-description { display: block; width: 100%; margin-top: 5px; resize: vertical; font-size: .83rem; border: 1px solid #ddd; border-radius: 4px; padding: 4px 7px; font-family: inherit; color: #444; box-sizing: border-box; }
 #crewboard-services-table th:nth-child(1) { width: 15%; }
 #crewboard-services-table th:nth-child(2),
 #crewboard-services-table th:nth-child(3) { width: 15%; }

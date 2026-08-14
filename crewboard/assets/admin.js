@@ -15,6 +15,15 @@ function crewBoardAdminInit() {
       const index = `${Date.now()}_${Math.floor(Math.random() * 1000)}`;
       const html  = template.innerHTML.replaceAll('__INDEX__', index);
       tableBody.insertAdjacentHTML('beforeend', html);
+      // Auto-fill start/end from event timing stored on the table.
+      const tbl    = document.getElementById('crewboard-services-table');
+      const newRow = tableBody.lastElementChild;
+      if (tbl && newRow) {
+        const es = tbl.dataset.evtStart;
+        const ee = tbl.dataset.evtEnd;
+        if (es) { const f = newRow.querySelector('input[name*="[start]"]'); if (f && !f.value) f.value = es; }
+        if (ee) { const f = newRow.querySelector('input[name*="[end]"]');   if (f && !f.value) f.value = ee; }
+      }
       bindRemove(tableBody);
     });
     bindRemove();
