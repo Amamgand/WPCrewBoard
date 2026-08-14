@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class CrewBoard {
-    const VERSION = '0.3.2';
+    const VERSION = '0.3.3';
     const META_SERVICES = '_crewboard_services';
     const PAGE_OPTION = 'crewboard_portal_page_id';
     const META_TEAMS = '_crewboard_teams';
@@ -39,7 +39,7 @@ final class CrewBoard {
         add_action( 'admin_post_crewboard_save_event_services', array( __CLASS__, 'save_services_from_admin_page' ) );
         add_action( 'admin_post_crewboard_respond_service', array( __CLASS__, 'respond_service' ) );
         add_filter( 'login_redirect', array( __CLASS__, 'login_redirect' ), 20, 3 );
-        add_rewrite_rule( '^crewboard/calendar\.ics$', 'index.php?crewboard_ics_feed=1', 'top' );
+        add_action( 'init', array( __CLASS__, 'register_rewrite_rules' ) );
         add_filter( 'query_vars', array( __CLASS__, 'ics_query_vars' ) );
         add_action( 'template_redirect', array( __CLASS__, 'maybe_serve_ics_feed' ) );
         add_action( 'admin_post_crewboard_rotate_ics_token', array( __CLASS__, 'rotate_ics_token' ) );
@@ -55,34 +55,45 @@ final class CrewBoard {
         if ( false === get_option( self::OPTION_DEFAULT_SERVICES, false ) ) {
             add_option( self::OPTION_DEFAULT_SERVICES, array( 'theke' => 2, 'einlass' => 2, 'einkauf' => 1 ) );
         }
+
+        // Ensure the portal page exists (do not short-circuit before the rewrite flush).
         $page_id = (int) get_option( self::PAGE_OPTION );
-        if ( $page_id && get_post( $page_id ) ) {
-            return;
+        if ( ! $page_id || ! get_post( $page_id ) ) {
+            $existing = get_posts(
+                array(
+                    'name'           => 'intern',
+                    'post_type'      => 'page',
+                    'post_status'    => 'publish',
+                    'posts_per_page' => 1,
+                    'fields'         => 'ids',
+                )
+            );
+            if ( ! empty( $existing ) ) {
+                update_option( self::PAGE_OPTION, (int) $existing[0] );
+            } else {
+                $new_id = wp_insert_post(
+                    array(
+                        'post_title'   => 'CrewBoard',
+                        'post_name'    => 'intern',
+                        'post_content' => '[crewboard]',
+                        'post_status'  => 'publish',
+                        'post_type'    => 'page',
+                    ),
+                    true
+                );
+                if ( ! is_wp_error( $new_id ) ) {
+                    update_option( self::PAGE_OPTION, (int) $new_id );
+                }
+            }
         }
 
-        $existing = get_page_by_path( 'intern' );
-        if ( $existing instanceof WP_Post ) {
-            update_option( self::PAGE_OPTION, $existing->ID );
-            return;
-        }
-
-        $page_id = wp_insert_post(
-            array(
-                'post_title'   => 'CrewBoard',
-                'post_name'    => 'intern',
-                'post_content' => '[crewboard]',
-                'post_status'  => 'publish',
-                'post_type'    => 'page',
-            ),
-            true
-        );
-
-        if ( ! is_wp_error( $page_id ) ) {
-            update_option( self::PAGE_OPTION, (int) $page_id );
-        }
-        // Register the ICS rewrite rule before flushing so the rule is persisted.
-        add_rewrite_rule( '^crewboard/calendar\.ics$', 'index.php?crewboard_ics_feed=1', 'top' );
+        // Always register the ICS rewrite rule and flush on every activation / re-activation.
+        self::register_rewrite_rules();
         flush_rewrite_rules();
+    }
+
+    public static function register_rewrite_rules(): void {
+        add_rewrite_rule( '^crewboard/calendar\.ics$', 'index.php?crewboard_ics_feed=1', 'top' );
     }
 
     public static function load_textdomain(): void {
@@ -294,7 +305,9 @@ final class CrewBoard {
 
             <?php
             $cb_param = isset( $_GET['crewboard'] ) ? sanitize_key( wp_unslash( $_GET['crewboard'] ) ) : '';
-            if ( 'responded_accepted' === $cb_param ) : ?>
+            if ( 'claimed' === $cb_param ) : ?>
+                <div class="crewboard-notice crewboard-notice-success">✓ Du wurdest für den Dienst eingetragen!</div>
+            <?php elseif ( 'responded_accepted' === $cb_param ) : ?>
                 <div class="crewboard-notice crewboard-notice-success">✓ Danke! Deine Zusage wurde gespeichert.</div>
             <?php elseif ( 'responded_denied' === $cb_param ) : ?>
                 <div class="crewboard-notice crewboard-notice-warning">Deine Ablehnung wurde gespeichert. Die Koordination wurde informiert.</div>
@@ -440,8 +453,11 @@ final class CrewBoard {
         $portal_url = get_permalink();
         $today      = wp_date( 'Y-m-d', null, $tz );
 
-        // Build per-date payload (title + user task info) for JS detail panel.
-        $day_data = array();
+        // Build per-date payload for the grid and server-side detail panels.
+        $day_data     = array();
+        $event_panels = array();
+        $self_assign  = '1' === get_option( self::OPTION_SELF_ASSIGN, '1' );
+
         foreach ( $events as $event ) {
             $date = self::event_start_date( $event );
             if ( ! $date ) {
@@ -449,13 +465,19 @@ final class CrewBoard {
             }
             $key      = $date->format( 'Y-m-d' );
             $services = self::get_services( $event->ID );
-            $mine     = array_values(
-                array_filter(
-                    $services,
-                    fn( array $s ): bool => in_array( $user_id, array_map( 'intval', $s['assigned'] ?? array() ), true )
-                )
-            );
-            // Compute dominant response status for this user on this event
+
+            $mine = array_values( array_filter( $services,
+                fn( array $s ): bool => in_array( $user_id, array_map( 'intval', $s['assigned'] ?? array() ), true )
+            ) );
+
+            $open = $self_assign ? array_values( array_filter( $services,
+                fn( array $s ): bool =>
+                    self::user_is_eligible( $user_id, (string) ( $s['team'] ?? '' ) ) &&
+                    ! in_array( $user_id, array_map( 'intval', $s['assigned'] ?? array() ), true ) &&
+                    count( $s['assigned'] ?? array() ) < max( 1, (int) ( $s['needed'] ?? 1 ) )
+            ) ) : array();
+
+            // Compute dominant response status for this user on this event.
             $my_status = '';
             foreach ( $mine as $ms ) {
                 $svc_resp   = is_array( $ms['responses'] ?? null ) ? $ms['responses'] : array();
@@ -464,12 +486,16 @@ final class CrewBoard {
                 if ( 'denied' === $svc_status && 'pending' !== $my_status ) { $my_status = 'denied'; }
                 if ( 'accepted' === $svc_status && '' === $my_status ) { $my_status = 'accepted'; }
             }
+
             $day_data[ $key ][] = array(
+                'event_id'    => $event->ID,
                 'title'       => get_the_title( $event ),
                 'has_my_task' => ! empty( $mine ),
                 'my_services' => array_column( $mine, 'title' ),
                 'my_status'   => $my_status,
             );
+
+            $event_panels[] = array( 'event' => $event, 'mine' => $mine, 'open' => $open );
         }
 
         $start_dow     = (int) $first->format( 'N' ); // 1 = Mon … 7 = Sun
@@ -521,7 +547,101 @@ final class CrewBoard {
                 <?php endfor; ?>
             </div>
 
-            <div class="crewboard-cal-panel" id="crewboard-cal-panel" hidden></div>
+        <?php // Server-rendered event detail panels (contain nonce-protected forms). ?>
+        <div id="crewboard-evt-panels" hidden>
+            <?php
+            $badge_map = array(
+                'accepted' => array( 'label' => '✓ Zugesagt',   'cls' => 'accepted' ),
+                'denied'   => array( 'label' => '✗ Abgelehnt',  'cls' => 'denied' ),
+                'pending'  => array( 'label' => '– Ausstehend', 'cls' => 'pending' ),
+            );
+            foreach ( $event_panels as $pd ) :
+                $pevt = $pd['event'];
+            ?>
+            <div class="crewboard-evt-panel" id="crewboard-evt-<?php echo esc_attr( (string) $pevt->ID ); ?>" hidden>
+                <div class="crewboard-evt-panel-header">
+                    <span class="crewboard-evt-panel-date"><?php echo esc_html( self::event_date_label( $pevt ) ); ?></span>
+                    <strong class="crewboard-evt-panel-title"><?php echo esc_html( get_the_title( $pevt ) ); ?></strong>
+                </div>
+
+                <?php if ( ! empty( $pd['mine'] ) ) : ?>
+                    <p class="crewboard-evt-sublabel">Deine Einteilung</p>
+                    <?php foreach ( $pd['mine'] as $svc ) :
+                        $svc_responses = is_array( $svc['responses'] ?? null ) ? $svc['responses'] : array();
+                        $resp          = $svc_responses[ (string) $user_id ] ?? array( 'status' => 'pending', 'reason' => '' );
+                        $resp_status   = $resp['status'] ?? 'pending';
+                        $badge         = $badge_map[ $resp_status ] ?? null;
+                    ?>
+                    <div class="crewboard-evt-task">
+                        <div class="crewboard-evt-task-info">
+                            <span class="crewboard-evt-task-title"><?php echo esc_html( $svc['title'] ); ?></span>
+                            <?php if ( ! empty( $svc['start'] ) ) : ?>
+                                <span class="crewboard-evt-task-time"><?php echo esc_html( self::format_service_time( $svc, $pevt ) ); ?></span>
+                            <?php endif; ?>
+                            <?php if ( $badge ) : ?>
+                                <span class="crewboard-response-badge crewboard-response-<?php echo esc_attr( $badge['cls'] ); ?>"><?php echo esc_html( $badge['label'] ); ?></span>
+                            <?php endif; ?>
+                            <?php if ( 'denied' === $resp_status && ! empty( $resp['reason'] ) ) : ?>
+                                <span class="crewboard-response-reason"><?php echo esc_html( $resp['reason'] ); ?></span>
+                            <?php endif; ?>
+                        </div>
+                        <div class="crewboard-respond-inline">
+                            <?php if ( 'accepted' !== $resp_status ) : ?>
+                                <form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+                                    <input type="hidden" name="action"          value="crewboard_respond_service">
+                                    <input type="hidden" name="event_id"        value="<?php echo esc_attr( (string) $pevt->ID ); ?>">
+                                    <input type="hidden" name="service_id"      value="<?php echo esc_attr( $svc['id'] ); ?>">
+                                    <input type="hidden" name="response_status" value="accepted">
+                                    <?php wp_nonce_field( 'crewboard_respond_' . $pevt->ID . '_' . $svc['id'], 'crewboard_respond_nonce' ); ?>
+                                    <button class="crewboard-button crewboard-button-accept" type="submit">✓ Zusagen</button>
+                                </form>
+                            <?php endif; ?>
+                            <?php if ( 'denied' !== $resp_status ) : ?>
+                                <form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="crewboard-deny-inline">
+                                    <input type="hidden" name="action"          value="crewboard_respond_service">
+                                    <input type="hidden" name="event_id"        value="<?php echo esc_attr( (string) $pevt->ID ); ?>">
+                                    <input type="hidden" name="service_id"      value="<?php echo esc_attr( $svc['id'] ); ?>">
+                                    <input type="hidden" name="response_status" value="denied">
+                                    <?php wp_nonce_field( 'crewboard_respond_' . $pevt->ID . '_' . $svc['id'], 'crewboard_respond_nonce' ); ?>
+                                    <input type="text" name="response_reason" class="crewboard-deny-reason-input" placeholder="Ablehnungsgrund (optional)">
+                                    <button class="crewboard-button crewboard-button-deny" type="submit">✗ Absage</button>
+                                </form>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+
+                <?php if ( ! empty( $pd['open'] ) ) : ?>
+                    <p class="crewboard-evt-sublabel">Freie Dienste</p>
+                    <?php foreach ( $pd['open'] as $svc ) :
+                        $spots = max( 1, (int) ( $svc['needed'] ?? 1 ) ) - count( $svc['assigned'] ?? array() );
+                    ?>
+                    <div class="crewboard-evt-task crewboard-evt-task-open">
+                        <div class="crewboard-evt-task-info">
+                            <span class="crewboard-evt-task-title"><?php echo esc_html( $svc['title'] ); ?></span>
+                            <?php if ( ! empty( $svc['start'] ) ) : ?>
+                                <span class="crewboard-evt-task-time"><?php echo esc_html( self::format_service_time( $svc, $pevt ) ); ?></span>
+                            <?php endif; ?>
+                            <span class="crewboard-evt-task-spots"><?php echo esc_html( (string) $spots . ( 1 === $spots ? ' Platz frei' : ' Plätze frei' ) ); ?></span>
+                        </div>
+                        <form action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" method="post">
+                            <input type="hidden" name="action"     value="crewboard_claim_service">
+                            <input type="hidden" name="event_id"   value="<?php echo esc_attr( (string) $pevt->ID ); ?>">
+                            <input type="hidden" name="service_id" value="<?php echo esc_attr( $svc['id'] ); ?>">
+                            <?php wp_nonce_field( 'crewboard_claim_' . $pevt->ID . '_' . $svc['id'], 'crewboard_claim_nonce' ); ?>
+                            <button class="crewboard-button" type="submit">Ich mache das</button>
+                        </form>
+                    </div>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+
+                <?php if ( empty( $pd['mine'] ) && empty( $pd['open'] ) ) : ?>
+                    <p class="crewboard-evt-no-tasks">Für diese Veranstaltung gibt es keine Dienste für dich.</p>
+                <?php endif; ?>
+            </div>
+            <?php endforeach; ?>
+        </div>
         </section>
         <?php
         return (string) ob_get_clean();

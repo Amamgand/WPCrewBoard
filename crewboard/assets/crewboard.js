@@ -1,9 +1,9 @@
 /* CrewBoard – frontend calendar interaction */
 document.addEventListener('DOMContentLoaded', () => {
   // ── Calendar: click day to reveal detail panel ──────────────
-  const grid  = document.getElementById('crewboard-cal-grid');
-  const panel = document.getElementById('crewboard-cal-panel');
-  if (grid && panel) {
+  const grid      = document.getElementById('crewboard-cal-grid');
+  const evtPanels = document.getElementById('crewboard-evt-panels');
+  if (grid) {
     let activeCell = null;
 
     grid.addEventListener('click', e => {
@@ -12,7 +12,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (activeCell === cell) {
         cell.classList.remove('is-active');
-        panel.hidden = true;
+        if (evtPanels) {
+          evtPanels.hidden = true;
+          evtPanels.querySelectorAll('.crewboard-evt-panel').forEach(p => { p.hidden = true; });
+        }
         activeCell = null;
         return;
       }
@@ -21,31 +24,19 @@ document.addEventListener('DOMContentLoaded', () => {
       cell.classList.add('is-active');
       activeCell = cell;
 
-      const events = JSON.parse(cell.dataset.events || '[]');
-      panel.innerHTML = events.map(renderEvent).join('');
-      panel.hidden = false;
-      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    });
-
-    function renderEvent(evt) {
-      let h = `<div class="crewboard-cal-panel-event"><strong>${esc(evt.title)}</strong>`;
-      if (evt.has_my_task) {
-        h += `<span class="crewboard-cal-mine-badge">✓ Dein Dienst</span>`;
-        if (evt.my_services.length) {
-          h += `<ul>${evt.my_services.map(s => `<li>${esc(s)}</li>`).join('')}</ul>`;
-        }
+      if (evtPanels) {
+        // Hide all panels first, then reveal matching ones.
+        evtPanels.querySelectorAll('.crewboard-evt-panel').forEach(p => { p.hidden = true; });
+        const events = JSON.parse(cell.dataset.events || '[]');
+        let shown = 0;
+        events.forEach(evt => {
+          const p = document.getElementById('crewboard-evt-' + evt.event_id);
+          if (p) { p.hidden = false; shown++; }
+        });
+        evtPanels.hidden = shown === 0;
+        if (shown > 0) evtPanels.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }
-      h += `</div>`;
-      return h;
-    }
-
-    function esc(str) {
-      return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-    }
+    });
   }
 
   // ── ICS copy button ───────────────────────────────────────
