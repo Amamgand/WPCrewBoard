@@ -30,7 +30,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const events = JSON.parse(cell.dataset.events || '[]');
         let shown = 0;
         events.forEach(evt => {
-          const p = document.getElementById('crewboard-evt-' + evt.event_id);
+          // Try id-based lookup first, fall back to data-attribute.
+          const p = document.getElementById('crewboard-evt-' + evt.event_id)
+                  || evtPanels.querySelector('[data-event-id="' + evt.event_id + '"]');
           if (p) { p.hidden = false; shown++; }
         });
         evtPanels.hidden = shown === 0;

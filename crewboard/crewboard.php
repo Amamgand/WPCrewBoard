@@ -470,9 +470,13 @@ final class CrewBoard {
                 fn( array $s ): bool => in_array( $user_id, array_map( 'intval', $s['assigned'] ?? array() ), true )
             ) );
 
-            $open = $self_assign ? array_values( array_filter( $services,
+            // Any member with a level (or admin) may claim from the calendar;
+            // team is an organisational label, not a hard access gate for self-assign.
+            $can_claim = $self_assign &&
+                ( '' !== (string) get_user_meta( $user_id, self::META_LEVEL, true ) || user_can( $user_id, 'manage_options' ) );
+
+            $open = $can_claim ? array_values( array_filter( $services,
                 fn( array $s ): bool =>
-                    self::user_is_eligible( $user_id, (string) ( $s['team'] ?? '' ) ) &&
                     ! in_array( $user_id, array_map( 'intval', $s['assigned'] ?? array() ), true ) &&
                     count( $s['assigned'] ?? array() ) < max( 1, (int) ( $s['needed'] ?? 1 ) )
             ) ) : array();
@@ -558,7 +562,7 @@ final class CrewBoard {
             foreach ( $event_panels as $pd ) :
                 $pevt = $pd['event'];
             ?>
-            <div class="crewboard-evt-panel" id="crewboard-evt-<?php echo esc_attr( (string) $pevt->ID ); ?>" hidden>
+            <div class="crewboard-evt-panel" id="crewboard-evt-<?php echo esc_attr( (string) $pevt->ID ); ?>" data-event-id="<?php echo esc_attr( (string) $pevt->ID ); ?>" hidden>
                 <div class="crewboard-evt-panel-header">
                     <span class="crewboard-evt-panel-date"><?php echo esc_html( self::event_date_label( $pevt ) ); ?></span>
                     <strong class="crewboard-evt-panel-title"><?php echo esc_html( get_the_title( $pevt ) ); ?></strong>
