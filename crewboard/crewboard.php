@@ -2,8 +2,8 @@
 /**
  * Plugin Name: CrewBoard
  * Description: Einfaches Mitgliederportal und Dienstplanung für Events Manager.
- * Version: 0.2.0
- * Author: Bühne-Schlachthof Eisenach e. V.
+ * Version: 0.3.5
+ * Author: Amamgand
  * Text Domain: crewboard
  * Requires at least: 6.4
  * Requires PHP: 8.0
